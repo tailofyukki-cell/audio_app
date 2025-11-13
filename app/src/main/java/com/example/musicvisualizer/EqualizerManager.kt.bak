@@ -1,0 +1,157 @@
+package com.example.musicvisualizer
+
+import android.media.audiofx.Equalizer
+import android.util.Log
+
+class EqualizerManager(audioSessionId: Int) {
+    private var equalizer: Equalizer? = null
+    private val TAG = "EqualizerManager"
+    
+    // 10バンドの中心周波数（Hz）
+    val bandFrequencies = listOf(
+        31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000
+    )
+    
+    // プリセット定義（dB単位）
+    enum class EqualizerPreset(val displayName: String, val gains: List<Int>) {
+        NORMAL("Normal", listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
+        POP("Pop", listOf(-2, -1, 0, 2, 4, 4, 2, 0, -1, -2)),
+        ROCK("Rock", listOf(5, 3, -3, -5, -2, 2, 5, 6, 6, 6)),
+        JAZZ("Jazz", listOf(4, 3, 1, 2, -2, -2, 0, 2, 3, 4)),
+        CLASSICAL("Classical", listOf(5, 4, 3, 2, -2, -2, 0, 2, 3, 4)),
+        DANCE("Dance", listOf(6, 4, 2, 0, 0, -3, -4, -4, 0, 0)),
+        CUSTOM("Custom", listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+    }
+    
+    init {
+        try {
+            equalizer = Equalizer(0, audioSessionId).apply {
+                enabled = true
+            }
+            Log.d(TAG, "Equalizer initialized with ${getNumberOfBands()} bands")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize equalizer", e)
+        }
+    }
+    
+    /**
+     * バンド数を取得
+     */
+    fun getNumberOfBands(): Short {
+        return equalizer?.numberOfBands ?: 0
+    }
+    
+    /**
+     * 特定のバンドのゲインを設定
+     * @param band バンド番号（0-9）
+     * @param gainDb ゲイン（dB単位、-15～15）
+     */
+    fun setBandGain(band: Short, gainDb: Int) {
+        try {
+            val eq = equalizer ?: return
+            val minLevel = eq.bandLevelRange[0]
+            val maxLevel = eq.bandLevelRange[1]
+            
+            // dBをミリベル（mB）に変換（1dB = 100mB）
+            val gainMb = (gainDb * 100).toShort()
+            val clampedGain = gainMb.coerceIn(minLevel, maxLevel)
+            
+            eq.setBandLevel(band, clampedGain)
+            Log.d(TAG, "Set band $band to ${gainDb}dB (${clampedGain}mB)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set band gain", e)
+        }
+    }
+    
+    /**
+     * 特定のバンドのゲインを取得
+     * @param band バンド番号（0-9）
+     * @return ゲイン（dB単位）
+     */
+    fun getBandGain(band: Short): Int {
+        try {
+            val eq = equalizer ?: return 0
+            val gainMb = eq.getBandLevel(band)
+            // ミリベル（mB）をdBに変換
+            return (gainMb / 100)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get band gain", e)
+            return 0
+        }
+    }
+    
+    /**
+     * プリセットを適用
+     */
+    fun applyPreset(preset: EqualizerPreset) {
+        preset.gains.forEachIndexed { index, gain ->
+            setBandGain(index.toShort(), gain)
+        }
+        Log.d(TAG, "Applied preset: ${preset.displayName}")
+    }
+    
+    /**
+     * すべてのバンドのゲインを取得
+     */
+    fun getAllBandGains(): List<Int> {
+        val numberOfBands = getNumberOfBands().toInt()
+        return (0 until numberOfBands).map { band ->
+            getBandGain(band.toShort())
+        }
+    }
+    
+    /**
+     * すべてのバンドのゲインを設定
+     */
+    fun setAllBandGains(gains: List<Int>) {
+        gains.forEachIndexed { index, gain ->
+            setBandGain(index.toShort(), gain)
+        }
+    }
+    
+    /**
+     * イコライザーの有効/無効を切り替え
+     */
+    fun setEnabled(enabled: Boolean) {
+        try {
+            equalizer?.enabled = enabled
+            Log.d(TAG, "Equalizer ${if (enabled) "enabled" else "disabled"}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set equalizer enabled state", e)
+        }
+    }
+    
+    /**
+     * イコライザーが有効かどうか
+     */
+    fun isEnabled(): Boolean {
+        return equalizer?.enabled ?: false
+    }
+    
+    /**
+     * ゲインの範囲を取得（dB単位）
+     */
+    fun getGainRange(): Pair<Int, Int> {
+        return try {
+            val eq = equalizer ?: return Pair(-15, 15)
+            val minDb = eq.bandLevelRange[0] / 100
+            val maxDb = eq.bandLevelRange[1] / 100
+            Pair(minDb, maxDb)
+        } catch (e: Exception) {
+            Pair(-15, 15)
+        }
+    }
+    
+    /**
+     * リソースを解放
+     */
+    fun release() {
+        try {
+            equalizer?.release()
+            equalizer = null
+            Log.d(TAG, "Equalizer released")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to release equalizer", e)
+        }
+    }
+}

@@ -352,16 +352,16 @@ fun MusicPlayerScreen(viewModel: MusicPlayerViewModel) {
             }
 
             // 停止ボタン
-            FloatingActionButton(
+            IconButton(
                 onClick = { viewModel.stop() },
-                modifier = Modifier.size(64.dp),
-                containerColor = if (isPrepared) Color(0xFF424242) else Color(0xFF2E2E2E),
-                contentColor = if (isPrepared) Color.White else Color.Gray
+                enabled = isPrepared,
+                modifier = Modifier.size(64.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Stop,
                     contentDescription = "Stop",
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(32.dp),
+                    tint = if (isPrepared) MaterialTheme.colorScheme.onBackground else Color.Gray
                 )
             }
 
