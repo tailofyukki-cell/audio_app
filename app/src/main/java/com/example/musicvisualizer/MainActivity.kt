@@ -1,0 +1,385 @@
+package com.example.musicvisualizer
+
+import androidx.compose.material3.ExperimentalMaterial3Api
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
+
+class MainActivity : ComponentActivity() {
+    private val viewModel: MusicPlayerViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        viewModel.initialize()
+
+        setContent {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    primary = Color(0xFF2196F3),
+                    secondary = Color(0xFF4CAF50),
+                    background = Color(0xFF121212),
+                    surface = Color(0xFF1E1E1E),
+                    onPrimary = Color.White,
+                    onSecondary = Color.White,
+                    onBackground = Color.White,
+                    onSurface = Color.White
+                )
+            ) {
+                MusicVisualizerApp(viewModel)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+fun MusicVisualizerApp(viewModel: MusicPlayerViewModel) {
+    val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        listOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.READ_MEDIA_AUDIO
+        )
+    } else {
+        listOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        )
+    }
+
+    val permissionsState = rememberMultiplePermissionsState(permissionsToRequest)
+
+    LaunchedEffect(Unit) {
+        if (!permissionsState.allPermissionsGranted) {
+            permissionsState.launchMultiplePermissionRequest()
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        if (permissionsState.allPermissionsGranted) {
+            MusicPlayerScreen(viewModel)
+        } else {
+            PermissionRequestScreen(
+                onRequestPermissions = {
+                    permissionsState.launchMultiplePermissionRequest()
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Warning,
+            contentDescription = null,
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "権限が必要です",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "このアプリを使用するには、以下の権限が必要です：\n\n" +
+                    "• 録音権限（音声の可視化）\n" +
+                    "• ストレージ権限（音楽ファイルの読み込み）",
+            fontSize = 16.sp,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = onRequestPermissions,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text("権限を許可", fontSize = 18.sp)
+        }
+    }
+}
+
+@Composable
+fun MusicPlayerScreen(viewModel: MusicPlayerViewModel) {
+    val isPlaying by viewModel.isPlaying
+    val visualizerData by viewModel.visualizerData
+    val visualizerMode by viewModel.visualizerMode
+    val currentPosition by viewModel.currentPosition
+    val duration by viewModel.duration
+    val volume by viewModel.volume
+    val selectedMusicName by viewModel.selectedMusicName
+    val isPrepared by viewModel.isPrepared
+
+    val musicPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            val fileName = it.lastPathSegment ?: "Unknown"
+            viewModel.loadMusic(it, fileName)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        // タイトル
+        Text(
+            text = "🎵 Music Visualizer",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(vertical = 16.dp)
+        )
+
+        // ビジュアライザーモード選択
+        VisualizerModeSelector(
+            selectedMode = visualizerMode,
+            onModeSelected = { viewModel.setVisualizerMode(it) }
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ビジュアライザー表示
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                when (visualizerMode) {
+                    MusicPlayerViewModel.VisualizerMode.BAR -> {
+                        BarVisualizer(
+                            modifier = Modifier.fillMaxSize(),
+                            data = visualizerData
+                        )
+                    }
+                    MusicPlayerViewModel.VisualizerMode.WAVEFORM -> {
+                        WaveformVisualizer(
+                            modifier = Modifier.fillMaxSize(),
+                            data = visualizerData
+                        )
+                    }
+                    MusicPlayerViewModel.VisualizerMode.CIRCULAR -> {
+                        CircularVisualizer(
+                            modifier = Modifier.fillMaxSize(),
+                            data = visualizerData
+                        )
+                    }
+                    MusicPlayerViewModel.VisualizerMode.SPECTRUM -> {
+                        SpectrumVisualizer(
+                            modifier = Modifier.fillMaxSize(),
+                            data = visualizerData
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 選択された音楽ファイル名
+        Text(
+            text = if (selectedMusicName.isNotEmpty()) selectedMusicName else "音楽が選択されていません",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        // シークバー
+        if (isPrepared) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = viewModel.formatTime(currentPosition),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                )
+
+                Slider(
+                    value = currentPosition.toFloat(),
+                    onValueChange = { viewModel.seekTo(it.toInt()) },
+                    valueRange = 0f..duration.toFloat(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp)
+                )
+
+                Text(
+                    text = viewModel.formatTime(duration),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                )
+            }
+        }
+
+        // 音量調整
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.VolumeDown,
+                contentDescription = "Volume",
+                tint = MaterialTheme.colorScheme.onBackground
+            )
+
+            Slider(
+                value = volume,
+                onValueChange = { viewModel.setVolume(it) },
+                valueRange = 0f..1f,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+            )
+
+            Icon(
+                imageVector = Icons.Default.VolumeUp,
+                contentDescription = "Volume",
+                tint = MaterialTheme.colorScheme.onBackground
+            )
+        }
+
+        // コントロールボタン
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 音楽選択ボタン
+            IconButton(
+                onClick = {
+                    musicPickerLauncher.launch(arrayOf("audio/*"))
+                },
+                modifier = Modifier.size(64.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LibraryMusic,
+                    contentDescription = "Select Music",
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            // 停止ボタン
+            IconButton(
+                onClick = { viewModel.stop() },
+                enabled = isPrepared,
+                modifier = Modifier.size(64.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Stop,
+                    contentDescription = "Stop",
+                    modifier = Modifier.size(32.dp),
+                    tint = if (isPrepared) MaterialTheme.colorScheme.onBackground else Color.Gray
+                )
+            }
+
+            // 再生/一時停止ボタン
+            FloatingActionButton(
+                onClick = {
+                    if (isPlaying) viewModel.pause() else viewModel.play()
+                },
+                modifier = Modifier.size(72.dp),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class) // <-- このアノテーションを追加します
+@Composable
+fun VisualizerModeSelector(
+    selectedMode: MusicPlayerViewModel.VisualizerMode,
+    onModeSelected: (MusicPlayerViewModel.VisualizerMode) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        MusicPlayerViewModel.VisualizerMode.values().forEach { mode ->
+            FilterChip( // FilterChipが実験的なAPIです
+                selected = selectedMode == mode,
+                onClick = { onModeSelected(mode) },
+                label = {
+                    Text(
+                        text = when (mode) {
+                            MusicPlayerViewModel.VisualizerMode.BAR -> "バー"
+                            MusicPlayerViewModel.VisualizerMode.WAVEFORM -> "波形"
+                            MusicPlayerViewModel.VisualizerMode.CIRCULAR -> "円形"
+                            MusicPlayerViewModel.VisualizerMode.SPECTRUM -> "スペクトラム"
+                        }
+                    )
+                }
+            )
+        }
+    }
+}
